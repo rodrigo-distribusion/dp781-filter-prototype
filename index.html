@@ -1,0 +1,1956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>connections/find — Prototype</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #f5f7fa;
+      --white: #ffffff;
+      --border: #e1e8ed;
+      --text: #2c3e50;
+      --muted: #6c757d;
+      --primary: #3498db;
+      --primary-dark: #2980b9;
+      --green: #27ae60;
+      --green-light: #d4edda;
+      --red: #e74c3c;
+      --panel-dark: #1a252f;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── TOP NAV ── */
+    .top-nav {
+      background: var(--panel-dark);
+      color: white;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      height: 50px;
+      flex-shrink: 0;
+      gap: 20px;
+    }
+    .nav-brand {
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'Monaco', 'Menlo', monospace;
+      color: #85c1e9;
+      white-space: nowrap;
+    }
+    .nav-links { display: flex; gap: 2px; }
+    .nav-link {
+      background: none; border: none;
+      color: rgba(255,255,255,0.55);
+      padding: 8px 14px; border-radius: 5px;
+      font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+    }
+    .nav-link:hover { color: white; background: rgba(255,255,255,0.08); }
+    .nav-link.active { color: white; background: rgba(255,255,255,0.14); }
+
+    /* ── PAGE ── */
+    .page { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* ── RETAILER API PAGE — 2-panel layout ── */
+    .rapi-layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* Left: form + JSON preview (scrollable sidebar) */
+    .request-left {
+      width: 380px;
+      flex-shrink: 0;
+      background: var(--white);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .panel-header h2 {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted);
+    }
+    .panel-body { flex: 1; overflow-y: auto; padding: 14px; }
+
+    /* JSON preview block inside left panel */
+    .json-block {
+      margin-top: 6px;
+      border-radius: 7px;
+      overflow: hidden;
+      border: 1px solid #253545;
+    }
+    .json-block-head {
+      padding: 9px 12px;
+      background: #1b2631;
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: rgba(255,255,255,0.4);
+    }
+    .json-block-body {
+      background: #1b2631;
+      padding: 12px;
+    }
+    .request-json {
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 11px; line-height: 1.65;
+      white-space: pre-wrap; word-break: break-word;
+      color: #607a8a;
+    }
+    .json-key  { color: #85c1e9; }
+    .json-str  { color: #a9d18e; }
+    .json-num  { color: #f4c668; }
+    .json-bool { color: #c792ea; }
+    .json-null { color: #c792ea; }
+
+    /* Right: response */
+    .response-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .response-right .panel-header { background: var(--white); }
+
+    /* ── FORM ELEMENTS ── */
+    .form-section { margin-bottom: 14px; }
+    .form-section-title {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px;
+    }
+    .field { margin-bottom: 8px; }
+    .field-label {
+      display: block; font-size: 11px; color: #8899aa;
+      margin-bottom: 3px; font-family: 'Monaco', 'Menlo', monospace;
+    }
+    .field-input {
+      width: 100%; padding: 6px 9px;
+      border: 1px solid var(--border); border-radius: 5px;
+      font-size: 12px; color: var(--text); background: white; transition: border-color 0.15s;
+    }
+    .field-input:focus { outline: none; border-color: var(--primary); }
+    .field-input:disabled { background: #f4f6f8; color: #aab; cursor: default; }
+    select.field-input { cursor: pointer; }
+
+    /* Field with clear button */
+    .field-wrap { position: relative; }
+    .field-wrap .field-input { padding-right: 22px; }
+    .field-clear {
+      position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: #bbb; cursor: pointer;
+      font-size: 12px; padding: 1px 3px; border-radius: 3px; line-height: 1;
+    }
+    .field-clear:hover { color: var(--red); background: #fee2e2; }
+
+    /* Grey text for empty date/time inputs */
+    .field-input--empty { color: var(--muted) !important; }
+
+    /* Required field indicators */
+    .req-star { color: #e53e3e; margin-left: 2px; font-weight: 600; }
+    .field-label--error { color: #e53e3e; }
+    .field-input--error { border-color: #e53e3e !important; background: #fff5f5; }
+
+    /* Bound card */
+    .bound-card { border: 1px solid var(--border); border-radius: 7px; margin-bottom: 10px; overflow: hidden; }
+    .bound-card-head {
+      display: flex; align-items: center; padding: 9px 12px;
+      background: #f8f9fa; cursor: pointer; user-select: none; gap: 7px;
+    }
+    .bound-card-head:hover { background: #eff2f5; }
+    .chevron { font-size: 9px; transition: transform 0.2s; flex-shrink: 0; color: var(--muted); }
+    .chevron.open { transform: rotate(90deg); }
+    .bound-label { flex: 1; font-size: 12px; font-weight: 600; }
+    .bound-remove {
+      width: 18px; height: 18px; border: none; background: none;
+      color: #bbb; cursor: pointer; font-size: 15px; line-height: 1;
+      border-radius: 3px; display: flex; align-items: center; justify-content: center;
+    }
+    .bound-remove:hover { background: #fee2e2; color: var(--red); }
+    .bound-body { padding: 12px; border-top: 1px solid var(--border); }
+
+    /* Array field */
+    .arr-field { border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+    .arr-header {
+      padding: 6px 10px; background: #f8f9fa;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+    }
+    .arr-item {
+      display: flex; gap: 6px; align-items: flex-start;
+      padding: 8px 10px; border-top: 1px solid var(--border);
+    }
+    .arr-item-grid {
+      flex: 1; display: grid; grid-template-columns: 1fr 52px 76px; gap: 5px;
+    }
+    .arr-item-grid .field { margin-bottom: 0; }
+    .arr-remove {
+      padding: 5px; border: none; background: none; color: #ccc;
+      cursor: pointer; border-radius: 3px; font-size: 13px; margin-top: 18px; flex-shrink: 0;
+    }
+    .arr-remove:hover { background: #fee2e2; color: var(--red); }
+
+    /* Collapsible item cards (vehicles, carriers) */
+    .item-card { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; overflow: hidden; }
+    .item-card-head {
+      display: flex; align-items: center; padding: 7px 10px;
+      background: #f8f9fa; cursor: pointer; user-select: none; gap: 6px;
+    }
+    .item-card-head:hover { background: #eff2f5; }
+    .item-label { flex: 1; font-size: 11px; font-weight: 600; font-family: 'Monaco','Menlo',monospace; }
+    .item-card-body { padding: 10px; border-top: 1px solid var(--border); }
+
+    /* Buttons */
+    .btn { padding: 7px 14px; border: none; border-radius: 5px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-secondary { background: #e9ecef; color: var(--text); }
+    .btn-secondary:hover { background: #dee2e6; }
+    .btn-add {
+      width: 100%; padding: 6px; border: 1px dashed var(--border);
+      background: none; color: var(--primary); font-size: 11px; font-weight: 500;
+      cursor: pointer; border-radius: 4px; margin-top: 6px; transition: all 0.15s;
+    }
+    .btn-add:hover { background: #e3f2fd; border-color: var(--primary); }
+
+    .count-pill {
+      font-size: 10px; color: var(--muted);
+      background: #e9ecef; padding: 2px 8px; border-radius: 8px;
+    }
+
+    /* ── CONNECTION CARDS ── */
+    .conn-card {
+      background: white; border: 1.5px solid var(--border); border-radius: 8px;
+      padding: 12px 14px; margin-bottom: 9px; cursor: pointer; transition: all 0.15s;
+    }
+    .conn-card:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(52,152,219,0.12); }
+    .conn-card.selected { border-color: var(--primary); background: #f0f8ff; }
+    .conn-card.best-match { border-color: var(--green); background: #f0fff6; }
+
+    .conn-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .conn-times { display: flex; align-items: center; gap: 8px; }
+    .conn-date { font-size: 12px; color: var(--muted); }
+    .conn-sep { font-size: 12px; color: var(--muted); margin: 0 1px; }
+    .conn-time { font-size: 19px; font-weight: 700; font-family: 'Monaco', 'Menlo', monospace; }
+    .conn-arrow { color: var(--muted); font-size: 13px; }
+    .conn-badges { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+    .badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 9px; white-space: nowrap; }
+    .badge-gray { background: #f0f4f8; color: var(--muted); }
+    .badge-gold { background: var(--green); color: white; }
+
+    .conn-stations { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 9px; }
+    .conn-segments { border-top: 1px solid var(--border); padding-top: 9px; }
+    .seg-row { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 5px; }
+    .seg-idx {
+      width: 17px; height: 17px; border-radius: 50%;
+      background: var(--bg); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; flex-shrink: 0; color: var(--muted);
+    }
+    .seg-vehicle {
+      font-family: 'Monaco', 'Menlo', monospace; font-size: 10px; padding: 2px 6px;
+      border-radius: 3px; background: #fce4ec; color: #c2185b; font-weight: 600;
+    }
+    .seg-carrier {
+      font-size: 10px; padding: 2px 6px; border-radius: 3px;
+      background: #fff9c4; color: #f57f17; font-weight: 600;
+    }
+    .seg-route { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .seg-times { font-family: 'Monaco', 'Menlo', monospace; font-size: 10px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+
+    /* Bound group label in response */
+    .bound-group { margin-bottom: 14px; }
+    .bound-group-label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--muted);
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    }
+    .bound-group-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── CONFIG PAGE ── */
+    .config-layout {
+      flex: 1; overflow-y: auto; padding: 24px;
+      max-width: 640px; margin: 0 auto;
+    }
+    .config-intro {
+      font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 20px;
+    }
+    .config-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+
+    /* Each draggable row */
+    .config-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      background: white; border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px;
+      cursor: default; transition: box-shadow 0.15s;
+    }
+    .config-item.dragging {
+      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+      opacity: 0.95;
+      border-color: var(--primary);
+    }
+    .config-item.drag-over { border-color: var(--primary); background: #f0f8ff; }
+
+    /* Drag handle */
+    .drag-handle {
+      display: flex; flex-direction: column; gap: 3px;
+      padding: 4px 2px; cursor: grab; flex-shrink: 0; margin-top: 2px;
+    }
+    .drag-handle:active { cursor: grabbing; }
+    .drag-dot-row { display: flex; gap: 3px; }
+    .drag-dot {
+      width: 3px; height: 3px; border-radius: 50%; background: #ccc;
+    }
+
+    /* Priority badge */
+    .config-rank {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--bg); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; color: var(--muted);
+      flex-shrink: 0; margin-top: 3px;
+    }
+
+    /* Label + hint area */
+    .config-meta { flex: 1; }
+    .config-label {
+      font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px;
+    }
+    .config-hint {
+      font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 5px;
+    }
+
+    /* Control (dropdown or counter) */
+    .config-control { flex-shrink: 0; min-width: 150px; }
+    .config-control select { width: 100%; }
+
+    /* Minutes counter */
+    .minutes-counter {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .minutes-counter button {
+      width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 4px;
+      background: white; cursor: pointer; font-size: 14px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center; color: var(--text);
+      transition: background 0.1s;
+    }
+    .minutes-counter button:hover { background: var(--bg); }
+    .minutes-counter .min-val {
+      font-family: 'Monaco', 'Menlo', monospace; font-size: 13px;
+      font-weight: 600; color: var(--text); min-width: 36px; text-align: center;
+    }
+
+    /* ── CONTENT PAGE ── */
+    .content-toolbar {
+      background: white; border-bottom: 1px solid var(--border);
+      padding: 11px 18px; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    .content-toolbar h2 { font-size: 13px; font-weight: 600; flex: 1; }
+    .content-layout { display: flex; flex: 1; overflow: hidden; }
+    .conn-list { flex: 1; overflow-y: auto; padding: 14px; }
+    .details-panel {
+      width: 350px; flex-shrink: 0; background: white;
+      border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden;
+    }
+    .details-body { flex: 1; overflow-y: auto; padding: 16px; }
+
+    /* Detail rows */
+    .det-section { margin-bottom: 18px; }
+    .det-section-title {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--muted); margin-bottom: 9px;
+    }
+    .det-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; gap: 10px; }
+    .det-key { color: var(--muted); flex-shrink: 0; }
+    .det-val { font-family: 'Monaco', 'Menlo', monospace; font-size: 11px; text-align: right; word-break: break-all; }
+    .det-divider { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+    .det-seg-card { border: 1px solid var(--border); border-radius: 5px; padding: 10px; margin-bottom: 7px; }
+    .det-seg-title {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px;
+    }
+
+    /* Empty state */
+    .empty {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 50px 20px; color: var(--muted); text-align: center;
+    }
+    .empty-icon { font-size: 40px; margin-bottom: 14px; opacity: 0.45; }
+    .empty h3 { font-size: 15px; margin-bottom: 6px; }
+    .empty p { font-size: 12px; line-height: 1.5; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; }
+    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+    #file-input { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- ── TOP NAV ── -->
+<nav class="top-nav">
+  <div class="nav-brand">POST /connections/find</div>
+  <div class="nav-links">
+    <button class="nav-link active" onclick="showPage('retailer-api', this)">Retailer API</button>
+    <button class="nav-link" onclick="showPage('content', this)">Content</button>
+    <button class="nav-link" onclick="showPage('config', this)">Config</button>
+  </div>
+</nav>
+
+<!-- ── RETAILER API PAGE ── -->
+<div id="page-retailer-api" class="page">
+  <div class="rapi-layout">
+
+    <!-- Left: form params + JSON preview below -->
+    <div class="request-left">
+      <div class="panel-header">
+        <h2>Request</h2>
+        <button class="btn btn-primary" onclick="runSearch()" style="font-size:11px;padding:5px 12px;">▶ Search</button>
+      </div>
+      <div class="panel-body" id="form-body"></div>
+    </div>
+
+    <!-- Right: Response connections -->
+    <div class="response-right">
+      <div class="panel-header">
+        <h2>Response</h2>
+        <span id="response-count" class="count-pill" style="display:none"></span>
+      </div>
+      <div class="panel-body" id="response-body">
+        <div class="empty">
+          <div class="empty-icon">🔍</div>
+          <h3>No search run yet</h3>
+          <p>Fill in the parameters on the left and click Search.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── CONTENT PAGE ── -->
+<div id="page-content" class="page" style="display:none">
+  <div class="content-toolbar">
+    <h2>Connections Database</h2>
+    <span id="content-count" class="count-pill">No data loaded</span>
+    <button class="btn btn-secondary" onclick="loadDefault()" style="font-size:11px;padding:5px 11px;">Load Default</button>
+    <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()" style="font-size:11px;padding:5px 11px;">Import JSON</button>
+    <input type="file" id="file-input" accept=".json" onchange="handleFile(event)">
+  </div>
+  <div class="content-layout">
+    <div class="conn-list" id="content-list">
+      <div class="empty">
+        <div class="empty-icon">📂</div>
+        <h3>No connections loaded</h3>
+        <p>Click "Load Default" to load the sample data,<br>or import a JSON:API response file.</p>
+      </div>
+    </div>
+    <div class="details-panel">
+      <div class="panel-header"><h2>Connection Details</h2></div>
+      <div class="details-body" id="details-body">
+        <div class="empty" style="padding:30px 10px">
+          <p>Select a connection to view details</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── CONFIG PAGE ── -->
+<div id="page-config" class="page" style="display:none">
+  <div class="config-layout">
+    <p class="config-intro">
+      These settings configure how <strong>match</strong> mode works.
+      Drag rows to reorder — the top item has the highest priority when
+      two connections score equally.
+    </p>
+    <ul class="config-list" id="config-list"></ul>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+const S = {
+  jsonData: null,
+  lookup: {},
+  connections: [],
+  selectedConn: null,
+  form: { search_mode: 'none', search_bounds: [] },
+  config: {
+    items: [
+      {
+        key: 'vehicle_number',
+        label: 'Vehicle Number',
+        type: 'dropdown',
+        value: 'closest',
+        options: [
+          { value: 'perfect', label: 'Perfect Match' },
+          { value: 'closest', label: 'Closest Match' },
+          { value: 'flexible', label: 'Flexible' }
+        ],
+        hint: 'Closest Match: similar vehicle numbers (e.g. 2354 matches 2354L). Flexible: allows completely different values if no match found.'
+      },
+      {
+        key: 'departure_time',
+        label: 'Departure Time',
+        type: 'minutes',
+        value: 10,
+        hint: 'Buffer used when only departure_start_time is provided. If both departure_start_time and departure_end_time are provided, the interval is used as-is.'
+      },
+      {
+        key: 'arrival_time',
+        label: 'Arrival Time',
+        type: 'minutes',
+        value: 10,
+        hint: 'Buffer used when only arrival_start_datetime is provided. If both arrival_start_datetime and arrival_end_datetime are provided, the interval is used as-is.'
+      },
+      {
+        key: 'departure_location',
+        label: 'Departure Location',
+        type: 'dropdown',
+        value: 'perfect',
+        options: [
+          { value: 'perfect', label: 'Perfect Match' },
+          { value: 'flexible', label: 'Flexible' }
+        ],
+        hint: ''
+      },
+      {
+        key: 'arrival_location',
+        label: 'Arrival Location',
+        type: 'dropdown',
+        value: 'perfect',
+        options: [
+          { value: 'perfect', label: 'Perfect Match' },
+          { value: 'flexible', label: 'Flexible' }
+        ],
+        hint: ''
+      },
+      {
+        key: 'travel_class',
+        label: 'Travel Class',
+        type: 'dropdown',
+        value: 'flexible',
+        options: [
+          { value: 'perfect', label: 'Perfect Match' },
+          { value: 'flexible', label: 'Flexible' }
+        ],
+        hint: ''
+      },
+      {
+        key: 'fare_class',
+        label: 'Fare Class',
+        type: 'dropdown',
+        value: 'flexible',
+        options: [
+          { value: 'perfect', label: 'Perfect Match' },
+          { value: 'flexible', label: 'Flexible' }
+        ],
+        hint: ''
+      }
+    ]
+  }
+};
+
+function configVal(key) {
+  return S.config.items.find(it => it.key === key)?.value;
+}
+
+// ═══════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  document.getElementById('page-' + id).style.display = 'flex';
+  document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════
+// JSON:API PARSING
+// ═══════════════════════════════════════════════
+function buildLookup(data) {
+  const lk = {};
+  const add = item => {
+    if (!item?.type || !item?.id) return;
+    if (!lk[item.type]) lk[item.type] = {};
+    lk[item.type][item.id] = item;
+  };
+  (data.included || []).forEach(add);
+  (data.data || []).forEach(add);
+  return lk;
+}
+
+function res(type, id) { return S.lookup[type]?.[id] || null; }
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const m = iso.match(/T(\d{2}:\d{2})/);
+  return m ? m[1] : iso.slice(0, 5);
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
+}
+
+function fmtDuration(mins) {
+  if (!mins) return '—';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function enrich(conn) {
+  const segs = (conn.relationships?.segments?.data || [])
+    .map(ref => {
+      const seg = res('segments', ref.id);
+      if (!seg) return null;
+      const depSt = res('stations', seg.relationships?.departure_station?.data?.id);
+      const arrSt = res('stations', seg.relationships?.arrival_station?.data?.id);
+      const veh   = res('vehicles', seg.relationships?.vehicle?.data?.id);
+      const opCar = res('operating_carriers', seg.relationships?.operating_carrier?.data?.id);
+      return {
+        id: seg.id,
+        index: seg.attributes?.index ?? 0,
+        departure_time:         seg.attributes?.departure_time,
+        arrival_time:           seg.attributes?.arrival_time,
+        departure_station_id:   depSt?.id,
+        departure_station_code: depSt?.attributes?.code || depSt?.id,
+        departure_station_name: depSt?.attributes?.name,
+        arrival_station_id:     arrSt?.id,
+        arrival_station_code:   arrSt?.attributes?.code || arrSt?.id,
+        arrival_station_name:   arrSt?.attributes?.name,
+        vehicle_number:         veh?.attributes?.vehicle_number,
+        vehicle_type:           veh?.relationships?.vehicle_type?.data?.id,
+        operating_carrier_code: opCar?.id || opCar?.attributes?.code,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.index - b.index || (new Date(a.departure_time) - new Date(b.departure_time)));
+
+  const depStRef = conn.relationships?.departure_station?.data;
+  const arrStRef = conn.relationships?.arrival_station?.data;
+  const depSt = depStRef ? res('stations', depStRef.id) : null;
+  const arrSt = arrStRef ? res('stations', arrStRef.id) : null;
+  const first = segs[0], last = segs[segs.length - 1];
+
+  return {
+    id: conn.id,
+    departure_time:         conn.attributes?.departure_time || first?.departure_time,
+    arrival_time:           conn.attributes?.arrival_time   || last?.arrival_time,
+    duration:               conn.attributes?.duration,
+    departure_station_id:   depSt?.id   || first?.departure_station_id,
+    departure_station_code: depSt?.attributes?.code || depSt?.id || first?.departure_station_code,
+    departure_station_name: depSt?.attributes?.name || first?.departure_station_name,
+    arrival_station_id:     arrSt?.id   || last?.arrival_station_id,
+    arrival_station_code:   arrSt?.attributes?.code || arrSt?.id || last?.arrival_station_code,
+    arrival_station_name:   arrSt?.attributes?.name || last?.arrival_station_name,
+    segments: segs,
+    leg_type: conn.attributes?.leg_type || null,
+    raw: conn
+  };
+}
+
+// ═══════════════════════════════════════════════
+// DATA LOADING
+// ═══════════════════════════════════════════════
+function ingestData(data) {
+  S.jsonData = data;
+  S.lookup = buildLookup(data);
+  S.connections = (data.data || []).map(enrich);
+  renderContentList();
+  document.getElementById('content-count').textContent =
+    `${S.connections.length} connection${S.connections.length !== 1 ? 's' : ''}`;
+}
+
+function handleFile(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try { ingestData(JSON.parse(e.target.result)); }
+    catch(err) { alert('Invalid JSON: ' + err.message); }
+  };
+  reader.readAsText(file);
+  evt.target.value = '';
+}
+
+function loadDefault() {
+  fetch('/cf_response.json')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(ingestData)
+    .catch(() => alert('Could not load default file.\nMake sure you are serving this page via a local server.'));
+}
+
+// ═══════════════════════════════════════════════
+// MATCHING LOGIC
+// ═══════════════════════════════════════════════
+
+// Parse an ISO datetime string (no timezone) as a local Date for comparison.
+// Handles "YYYY-MM-DD", "YYYY-MM-DDTHH:MM", "YYYY-MM-DDTHH:MM:SS".
+function parseLocalISO(str) {
+  if (!str) return null;
+  // Normalise to at least "YYYY-MM-DDTHH:MM"
+  const s = str.length === 10 ? str + 'T00:00' : str.slice(0, 16);
+  const [datePart, timePart = '00:00'] = s.split('T');
+  const [y, mo, d] = datePart.split('-').map(Number);
+  const [h, mi]   = timePart.split(':').map(Number);
+  return new Date(y, mo - 1, d, h, mi);
+}
+
+// Leg type assigned per bound index
+const BOUND_LEG_TYPE = { 0: 'outbound', 1: 'inbound' };
+
+// A bound is active if at least one meaningful value is set
+function isBoundActive(bound) {
+  const depVals = (bound.departure_location?.value || []).filter(v => v.trim());
+  const arrVals = (bound.arrival_location?.value || []).filter(v => v.trim());
+  return !!(
+    depVals.length || arrVals.length ||
+    bound.departure_date || bound.departure_start_time || bound.departure_end_time ||
+    bound.arrival_start_datetime || bound.arrival_end_datetime ||
+    (bound.vehicles || []).some(v => v.number?.trim()) ||
+    (bound.operating_carriers || []).some(oc => oc.code?.trim()) ||
+    (bound.travel_classes || []).some(tc => tc.value?.trim()) ||
+    (bound.fare_classes || []).some(fc => fc.code?.trim())
+  );
+}
+
+function matchesBound(conn, bound, legType) {
+  // Filter by leg_type when specified
+  if (legType && conn.leg_type && conn.leg_type !== legType) return false;
+
+  const depCodes = (bound.departure_location?.value || []).filter(v => v.trim());
+  const arrCodes = (bound.arrival_location?.value || []).filter(v => v.trim());
+
+  // Station filters
+  if (depCodes.length) {
+    const code = conn.departure_station_code || conn.departure_station_id;
+    if (!depCodes.includes(code)) return false;
+  }
+  if (arrCodes.length) {
+    const code = conn.arrival_station_code || conn.arrival_station_id;
+    if (!arrCodes.includes(code)) return false;
+  }
+
+  // Departure: connection must depart >= (departure_date + departure_start_time) and <= (departure_date + departure_end_time)
+  if (conn.departure_time) {
+    const connDep = parseLocalISO(conn.departure_time);
+    if (bound.departure_date && bound.departure_start_time) {
+      const floor = parseLocalISO(`${bound.departure_date}T${bound.departure_start_time}`);
+      if (connDep < floor) return false;
+    } else if (bound.departure_date) {
+      const floor = parseLocalISO(bound.departure_date); // midnight of that date
+      if (connDep < floor) return false;
+    } else if (bound.departure_start_time) {
+      // Time only: compare time-of-day
+      const [rh, rm] = bound.departure_start_time.split(':').map(Number);
+      const floorMin = rh * 60 + rm;
+      const connMin  = connDep.getHours() * 60 + connDep.getMinutes();
+      if (connMin < floorMin) return false;
+    }
+
+    // departure_end_time (upper bound for departure time)
+    if (bound.departure_end_time) {
+      const [eh, em] = bound.departure_end_time.split(':').map(Number);
+      const endMin = eh * 60 + em;
+      const connMin = connDep.getHours() * 60 + connDep.getMinutes();
+      if (connMin > endMin) return false;
+    }
+  }
+
+  // Arrival: FROM arrival_start_datetime; up to arrival_end_datetime if provided
+  if (conn.arrival_time) {
+    const connArr = parseLocalISO(conn.arrival_time);
+    if (bound.arrival_start_datetime) {
+      const start = parseLocalISO(bound.arrival_start_datetime);
+      if (connArr < start) return false;
+    }
+    if (bound.arrival_end_datetime) {
+      const end = parseLocalISO(bound.arrival_end_datetime);
+      if (connArr > end) return false;
+    }
+  }
+
+  // Vehicle filters (OR logic for includes, AND-NOT for excludes)
+  const vehicles = (bound.vehicles || []).filter(v => v.number?.trim());
+  if (vehicles.length) {
+    const includes = vehicles.filter(v => v.rule === 'include');
+    const excludes = vehicles.filter(v => v.rule === 'exclude');
+    // At least one include must match (OR logic)
+    if (includes.length) {
+      const anyHit = includes.some(v => {
+        const idx = v.segment_index !== '' && v.segment_index !== undefined ? parseInt(v.segment_index) : null;
+        const segs = idx !== null ? [conn.segments[idx]].filter(Boolean) : conn.segments;
+        return segs.some(s => s?.vehicle_number === v.number.trim());
+      });
+      if (!anyHit) return false;
+    }
+    // No exclude may match
+    for (const v of excludes) {
+      const idx = v.segment_index !== '' && v.segment_index !== undefined ? parseInt(v.segment_index) : null;
+      const segs = idx !== null ? [conn.segments[idx]].filter(Boolean) : conn.segments;
+      if (segs.some(s => s?.vehicle_number === v.number.trim())) return false;
+    }
+  }
+
+  // Operating carrier filters (OR logic for includes, AND-NOT for excludes)
+  const carriers = (bound.operating_carriers || []).filter(oc => oc.code?.trim());
+  if (carriers.length) {
+    const includes = carriers.filter(oc => oc.rule === 'include');
+    const excludes = carriers.filter(oc => oc.rule === 'exclude');
+    // At least one include must match (OR logic)
+    if (includes.length) {
+      const anyHit = includes.some(oc => {
+        const idx = oc.segment_index !== '' && oc.segment_index !== undefined ? parseInt(oc.segment_index) : null;
+        const segs = idx !== null ? [conn.segments[idx]].filter(Boolean) : conn.segments;
+        return segs.some(s => s?.operating_carrier_code === oc.code.trim());
+      });
+      if (!anyHit) return false;
+    }
+    // No exclude may match
+    for (const oc of excludes) {
+      const idx = oc.segment_index !== '' && oc.segment_index !== undefined ? parseInt(oc.segment_index) : null;
+      const segs = idx !== null ? [conn.segments[idx]].filter(Boolean) : conn.segments;
+      if (segs.some(s => s?.operating_carrier_code === oc.code.trim())) return false;
+    }
+  }
+
+  // Travel class filters (OR logic for includes, AND-NOT for excludes)
+  const travelClasses = (bound.travel_classes || []).filter(tc => tc.value?.trim());
+  if (travelClasses.length) {
+    const includes = travelClasses.filter(tc => tc.rule === 'include');
+    const excludes = travelClasses.filter(tc => tc.rule === 'exclude');
+    // At least one include must match (OR logic)
+    if (includes.length) {
+      const anyHit = includes.some(tc => {
+        const idx = tc.segment_index !== '' && tc.segment_index !== undefined ? parseInt(tc.segment_index) : null;
+        const segs = idx !== null ? [conn.segments[idx]].filter(Boolean) : conn.segments;
+        return segs.some(s => s?.travel_class === tc.value.trim());
+      });
+      if (!anyHit) return false;
+    }
+    // No exclude may match
+    for (const tc of excludes) {
+      const idx = tc.segment_index !== '' && tc.segment_index !== undefined ? parseInt(tc.segment_index) : null;
+      const segs = idx !== null ? [conn.segments[idx]].filter(Boolean) : conn.segments;
+      if (segs.some(s => s?.travel_class === tc.value.trim())) return false;
+    }
+  }
+
+  // Fare class filters (OR logic for includes, AND-NOT for excludes)
+  const fareClasses = (bound.fare_classes || []).filter(fc => fc.code?.trim());
+  if (fareClasses.length) {
+    const includes = fareClasses.filter(fc => fc.rule === 'include');
+    const excludes = fareClasses.filter(fc => fc.rule === 'exclude');
+    // At least one include must match (OR logic)
+    if (includes.length) {
+      const anyHit = includes.some(fc => {
+        const idx = fc.segment_index !== '' && fc.segment_index !== undefined ? parseInt(fc.segment_index) : null;
+        const segs = idx !== null ? [conn.segments[idx]].filter(Boolean) : conn.segments;
+        return segs.some(s => s?.fare_class === fc.code.trim());
+      });
+      if (!anyHit) return false;
+    }
+    // No exclude may match
+    for (const fc of excludes) {
+      const idx = fc.segment_index !== '' && fc.segment_index !== undefined ? parseInt(fc.segment_index) : null;
+      const segs = idx !== null ? [conn.segments[idx]].filter(Boolean) : conn.segments;
+      if (segs.some(s => s?.fare_class === fc.code.trim())) return false;
+    }
+  }
+
+  return true;
+}
+
+// ═══════════════════════════════════════════════
+// FORM
+// ═══════════════════════════════════════════════
+function initForm() {
+  S.form = {
+    search_mode: 'none',
+    search_bounds: [
+      {
+        departure_location: { type: 'stations', value: ['DEBERHBF'] },
+        departure_date: '2026-03-02',
+        departure_start_time: '15:36',
+        departure_end_time: '',
+        arrival_start_datetime: '2026-03-02T19:00',
+        arrival_end_datetime: '2026-03-02T20:00',
+        arrival_location: { type: 'stations', value: ['DEMUCMHU'] },
+        vehicles: [],
+        operating_carriers: [],
+        travel_classes: [],
+        fare_classes: []
+      }
+    ]
+  };
+  renderForm();
+}
+
+function renderForm() {
+  const body = document.getElementById('form-body');
+  body.innerHTML = '';
+
+  // Root params
+  body.insertAdjacentHTML('beforeend', `
+    <div class="form-section">
+      <div class="form-section-title">Root Parameters</div>
+      <div class="field">
+        <label class="field-label">search_mode</label>
+        <select class="field-input" onchange="S.form.search_mode=this.value;updatePreview()">
+          <option value="none" ${S.form.search_mode === 'none' ? 'selected' : ''}>none</option>
+          <option value="match" ${S.form.search_mode === 'match' ? 'selected' : ''}>match</option>
+        </select>
+      </div>
+    </div>
+  `);
+
+  // search_bounds
+  const boundsWrap = document.createElement('div');
+  boundsWrap.className = 'form-section';
+  boundsWrap.insertAdjacentHTML('beforeend', `<div class="form-section-title">search_bounds[]</div>`);
+
+  S.form.search_bounds.forEach((bound, i) => {
+    boundsWrap.appendChild(makeBoundCard(bound, i));
+  });
+
+  // Only show "Add" button if fewer than 2 bounds (max is 2: outbound + inbound)
+  if (S.form.search_bounds.length < 2) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn-add';
+    addBtn.textContent = '+ Add Inbound bound';
+    addBtn.onclick = () => {
+      S.form.search_bounds.push({
+        departure_location: { type: 'stations', value: [''] },
+        departure_date: '', departure_start_time: '', departure_end_time: '',
+        arrival_start_datetime: '', arrival_end_datetime: '',
+        arrival_location: { type: 'stations', value: [''] },
+        vehicles: [], operating_carriers: [], travel_classes: [], fare_classes: []
+      });
+      renderForm();
+    };
+    boundsWrap.appendChild(addBtn);
+  }
+  body.appendChild(boundsWrap);
+
+  // JSON preview block at the bottom of the sidebar
+  body.insertAdjacentHTML('beforeend', `
+    <div class="json-block">
+      <div class="json-block-head">Request JSON</div>
+      <div class="json-block-body">
+        <div class="request-json" id="request-preview"></div>
+      </div>
+    </div>
+  `);
+
+  updatePreview();
+}
+
+function makeBoundCard(bound, i) {
+  const label = i === 0 ? 'Outbound' : i === 1 ? 'Inbound' : `Bound ${i+1}`;
+  const card = document.createElement('div');
+  card.className = 'bound-card';
+  // First bound expanded by default, subsequent ones collapsed
+  const isOpen = i === 0;
+
+  // Validation: compute empty state for required fields
+  const depTypeEmpty = !(bound.departure_location?.type?.trim());
+  const depValEmpty = !(bound.departure_location?.value?.[0]?.trim());
+  const depDateEmpty = !bound.departure_date;
+  const arrTypeEmpty = !(bound.arrival_location?.type?.trim());
+  const arrValEmpty = !(bound.arrival_location?.value?.[0]?.trim());
+
+  card.innerHTML = `
+    <div class="bound-card-head" onclick="toggleBound(${i})">
+      <span class="chevron ${isOpen?'open':''}" id="chev-${i}">▶</span>
+      <span class="bound-label">search_bounds[${i}] — ${label}</span>
+      ${i > 0 ? `<button class="bound-remove" onclick="removeBound(${i});event.stopPropagation()">×</button>` : ''}
+    </div>
+    <div class="bound-body" id="bb-${i}" ${isOpen?'':'style="display:none"'}>
+      <div class="field">
+        <label class="field-label ${depTypeEmpty ? 'field-label--error' : ''}">departure_location[type] <span class="req-star">*</span></label>
+        <input class="field-input ${depTypeEmpty ? 'field-input--error' : ''}" value="stations" disabled>
+      </div>
+      <div class="field">
+        <label class="field-label ${depValEmpty ? 'field-label--error' : ''}">departure_location[value][] <span class="req-star">*</span></label>
+        <div class="field-wrap">
+          <input class="field-input ${depValEmpty ? 'field-input--error' : ''}" type="text"
+            value="${esc(bound.departure_location?.value?.[0] || '')}"
+            placeholder="e.g. DEBERHBF"
+            oninput="S.form.search_bounds[${i}].departure_location.value[0]=this.value;updatePreview()">
+          <button class="field-clear" onclick="clearBoundField(${i},'dep_val')">×</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label ${depDateEmpty ? 'field-label--error' : ''}">departure_date <span class="req-star">*</span></label>
+        <div class="field-wrap">
+          <input class="field-input ${depDateEmpty ? 'field-input--error' : ''} ${!bound.departure_date ? 'field-input--empty' : ''}" type="date"
+            value="${esc(bound.departure_date || '')}"
+            oninput="S.form.search_bounds[${i}].departure_date=this.value;updatePreview()"
+            onchange="S.form.search_bounds[${i}].departure_date=this.value;updatePreview()">
+          <button class="field-clear" onclick="clearBoundField(${i},'departure_date')">×</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">departure_start_time</label>
+        <div class="field-wrap">
+          <input class="field-input ${!bound.departure_start_time ? 'field-input--empty' : ''}" type="time"
+            value="${esc(bound.departure_start_time || '')}"
+            oninput="S.form.search_bounds[${i}].departure_start_time=this.value;updatePreview()"
+            onchange="S.form.search_bounds[${i}].departure_start_time=this.value;updatePreview()">
+          <button class="field-clear" onclick="clearBoundField(${i},'departure_start_time')">×</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">departure_end_time</label>
+        <div class="field-wrap">
+          <input class="field-input ${!bound.departure_end_time ? 'field-input--empty' : ''}" type="time"
+            value="${esc(bound.departure_end_time || '')}"
+            oninput="S.form.search_bounds[${i}].departure_end_time=this.value;updatePreview()"
+            onchange="S.form.search_bounds[${i}].departure_end_time=this.value;updatePreview()">
+          <button class="field-clear" onclick="clearBoundField(${i},'departure_end_time')">×</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">arrival_start_datetime</label>
+        <div class="field-wrap">
+          <input class="field-input ${!bound.arrival_start_datetime ? 'field-input--empty' : ''}" type="datetime-local"
+            value="${esc(bound.arrival_start_datetime || '')}"
+            oninput="S.form.search_bounds[${i}].arrival_start_datetime=this.value;updatePreview()"
+            onchange="S.form.search_bounds[${i}].arrival_start_datetime=this.value;updatePreview()">
+          <button class="field-clear" onclick="clearBoundField(${i},'arrival_start_datetime')">×</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">arrival_end_datetime</label>
+        <div class="field-wrap">
+          <input class="field-input ${!bound.arrival_end_datetime ? 'field-input--empty' : ''}" type="datetime-local"
+            value="${esc(bound.arrival_end_datetime || '')}"
+            oninput="S.form.search_bounds[${i}].arrival_end_datetime=this.value;updatePreview()"
+            onchange="S.form.search_bounds[${i}].arrival_end_datetime=this.value;updatePreview()">
+          <button class="field-clear" onclick="clearBoundField(${i},'arrival_end_datetime')">×</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label ${arrTypeEmpty ? 'field-label--error' : ''}">arrival_location[type] <span class="req-star">*</span></label>
+        <input class="field-input ${arrTypeEmpty ? 'field-input--error' : ''}" value="stations" disabled>
+      </div>
+      <div class="field">
+        <label class="field-label ${arrValEmpty ? 'field-label--error' : ''}">arrival_location[value][] <span class="req-star">*</span></label>
+        <div class="field-wrap">
+          <input class="field-input ${arrValEmpty ? 'field-input--error' : ''}" type="text"
+            value="${esc(bound.arrival_location?.value?.[0] || '')}"
+            placeholder="e.g. DEMUCMHU"
+            oninput="S.form.search_bounds[${i}].arrival_location.value[0]=this.value;updatePreview()">
+          <button class="field-clear" onclick="clearBoundField(${i},'arr_val')">×</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">vehicles[]</label>
+        <div id="veh-arr-${i}">
+          ${(bound.vehicles || []).map((v, vi) => vehicleItemHtml(i, vi, v)).join('')}
+        </div>
+        <button class="btn-add" onclick="addVehicle(${i})">+ Add vehicle</button>
+      </div>
+      <div class="field">
+        <label class="field-label">operating_carriers[]</label>
+        <div id="car-arr-${i}">
+          ${(bound.operating_carriers || []).map((oc, ci) => carrierItemHtml(i, ci, oc)).join('')}
+        </div>
+        <button class="btn-add" onclick="addCarrier(${i})">+ Add carrier</button>
+      </div>
+      <div class="field">
+        <label class="field-label">travel_classes[]</label>
+        <div id="tc-arr-${i}">
+          ${(bound.travel_classes || []).map((tc, tci) => travelClassItemHtml(i, tci, tc)).join('')}
+        </div>
+        <button class="btn-add" onclick="addTravelClass(${i})">+ Add travel class</button>
+      </div>
+      <div class="field">
+        <label class="field-label">fare_classes[]</label>
+        <div id="fc-arr-${i}">
+          ${(bound.fare_classes || []).map((fc, fci) => fareClassItemHtml(i, fci, fc)).join('')}
+        </div>
+        <button class="btn-add" onclick="addFareClass(${i})">+ Add fare class</button>
+      </div>
+    </div>
+  `;
+  return card;
+}
+
+function vehicleItemHtml(bi, vi, v) {
+  const summary = v.number?.trim() ? ` — ${v.number}` : '';
+  return `
+    <div class="item-card" id="vi-${bi}-${vi}">
+      <div class="item-card-head" onclick="toggleVehicle(${bi},${vi})">
+        <span class="chevron open" id="veh-chev-${bi}-${vi}">▶</span>
+        <span class="item-label">vehicles[${vi}]${summary}</span>
+        <button class="bound-remove" onclick="removeVehicle(${bi},${vi});event.stopPropagation()">×</button>
+      </div>
+      <div class="item-card-body" id="veh-body-${bi}-${vi}">
+        <div class="field">
+          <label class="field-label">[number]</label>
+          <input class="field-input" type="text" value="${esc(v.number||'')}" placeholder="e.g. 33814S"
+            oninput="S.form.search_bounds[${bi}].vehicles[${vi}].number=this.value;updatePreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">[segment_index]</label>
+          <input class="field-input" type="number" min="0" value="${esc(v.segment_index??'')}" placeholder="—"
+            oninput="S.form.search_bounds[${bi}].vehicles[${vi}].segment_index=this.value;updatePreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">[rule]</label>
+          <select class="field-input"
+            onchange="S.form.search_bounds[${bi}].vehicles[${vi}].rule=this.value;updatePreview()">
+            <option value="include" ${v.rule==='include'?'selected':''}>include</option>
+            <option value="exclude" ${v.rule==='exclude'?'selected':''}>exclude</option>
+          </select>
+        </div>
+      </div>
+    </div>`;
+}
+
+function carrierItemHtml(bi, ci, oc) {
+  const summary = oc.code?.trim() ? ` — ${oc.code}` : '';
+  return `
+    <div class="item-card" id="ci-${bi}-${ci}">
+      <div class="item-card-head" onclick="toggleCarrier(${bi},${ci})">
+        <span class="chevron open" id="car-chev-${bi}-${ci}">▶</span>
+        <span class="item-label">operating_carriers[${ci}]${summary}</span>
+        <button class="bound-remove" onclick="removeCarrier(${bi},${ci});event.stopPropagation()">×</button>
+      </div>
+      <div class="item-card-body" id="car-body-${bi}-${ci}">
+        <div class="field">
+          <label class="field-label">[code]</label>
+          <input class="field-input" type="text" value="${esc(oc.code||'')}" placeholder="e.g. DFAG"
+            oninput="S.form.search_bounds[${bi}].operating_carriers[${ci}].code=this.value;updatePreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">[segment_index]</label>
+          <input class="field-input" type="number" min="0" value="${esc(oc.segment_index??'')}" placeholder="—"
+            oninput="S.form.search_bounds[${bi}].operating_carriers[${ci}].segment_index=this.value;updatePreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">[rule]</label>
+          <select class="field-input"
+            onchange="S.form.search_bounds[${bi}].operating_carriers[${ci}].rule=this.value;updatePreview()">
+            <option value="include" ${oc.rule==='include'?'selected':''}>include</option>
+            <option value="exclude" ${oc.rule==='exclude'?'selected':''}>exclude</option>
+          </select>
+        </div>
+      </div>
+    </div>`;
+}
+
+function travelClassItemHtml(bi, tci, tc) {
+  const summary = tc.value?.trim() ? ` — ${tc.value}` : '';
+  return `
+    <div class="item-card" id="tci-${bi}-${tci}">
+      <div class="item-card-head" onclick="toggleTravelClass(${bi},${tci})">
+        <span class="chevron open" id="tc-chev-${bi}-${tci}">▶</span>
+        <span class="item-label">travel_classes[${tci}]${summary}</span>
+        <button class="bound-remove" onclick="removeTravelClass(${bi},${tci});event.stopPropagation()">×</button>
+      </div>
+      <div class="item-card-body" id="tc-body-${bi}-${tci}">
+        <div class="field">
+          <label class="field-label">[value]</label>
+          <select class="field-input"
+            onchange="S.form.search_bounds[${bi}].travel_classes[${tci}].value=this.value;updatePreview()">
+            <option value="">— Select travel class —</option>
+            <option value="first" ${tc.value==='first'?'selected':''}>first</option>
+            <option value="second" ${tc.value==='second'?'selected':''}>second</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">[segment_index]</label>
+          <input class="field-input" type="number" min="0" value="${esc(tc.segment_index??'')}" placeholder="—"
+            oninput="S.form.search_bounds[${bi}].travel_classes[${tci}].segment_index=this.value;updatePreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">[rule]</label>
+          <select class="field-input"
+            onchange="S.form.search_bounds[${bi}].travel_classes[${tci}].rule=this.value;updatePreview()">
+            <option value="include" ${tc.rule==='include'?'selected':''}>include</option>
+            <option value="exclude" ${tc.rule==='exclude'?'selected':''}>exclude</option>
+          </select>
+        </div>
+      </div>
+    </div>`;
+}
+
+function fareClassItemHtml(bi, fci, fc) {
+  const summary = fc.code?.trim() ? ` — ${fc.code}` : '';
+  return `
+    <div class="item-card" id="fci-${bi}-${fci}">
+      <div class="item-card-head" onclick="toggleFareClass(${bi},${fci})">
+        <span class="chevron open" id="fc-chev-${bi}-${fci}">▶</span>
+        <span class="item-label">fare_classes[${fci}]${summary}</span>
+        <button class="bound-remove" onclick="removeFareClass(${bi},${fci});event.stopPropagation()">×</button>
+      </div>
+      <div class="item-card-body" id="fc-body-${bi}-${fci}">
+        <div class="field">
+          <label class="field-label">[code]</label>
+          <input class="field-input" type="text" value="${esc(fc.code||'')}" placeholder="e.g. BASIC"
+            oninput="S.form.search_bounds[${bi}].fare_classes[${fci}].code=this.value;updatePreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">[segment_index]</label>
+          <input class="field-input" type="number" min="0" value="${esc(fc.segment_index??'')}" placeholder="—"
+            oninput="S.form.search_bounds[${bi}].fare_classes[${fci}].segment_index=this.value;updatePreview()">
+        </div>
+        <div class="field">
+          <label class="field-label">[rule]</label>
+          <select class="field-input"
+            onchange="S.form.search_bounds[${bi}].fare_classes[${fci}].rule=this.value;updatePreview()">
+            <option value="include" ${fc.rule==='include'?'selected':''}>include</option>
+            <option value="exclude" ${fc.rule==='exclude'?'selected':''}>exclude</option>
+          </select>
+        </div>
+      </div>
+    </div>`;
+}
+
+function esc(s) { return String(s).replace(/"/g,'&quot;'); }
+
+function toggleBound(i) {
+  const b = document.getElementById(`bb-${i}`);
+  const c = document.getElementById(`chev-${i}`);
+  const open = b.style.display !== 'none';
+  b.style.display = open ? 'none' : '';
+  c.classList.toggle('open', !open);
+}
+
+function toggleVehicle(bi, vi) {
+  const body = document.getElementById(`veh-body-${bi}-${vi}`);
+  const chev = document.getElementById(`veh-chev-${bi}-${vi}`);
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  chev.classList.toggle('open', !open);
+}
+
+function toggleCarrier(bi, ci) {
+  const body = document.getElementById(`car-body-${bi}-${ci}`);
+  const chev = document.getElementById(`car-chev-${bi}-${ci}`);
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  chev.classList.toggle('open', !open);
+}
+
+function toggleTravelClass(bi, tci) {
+  const body = document.getElementById(`tc-body-${bi}-${tci}`);
+  const chev = document.getElementById(`tc-chev-${bi}-${tci}`);
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  chev.classList.toggle('open', !open);
+}
+
+function toggleFareClass(bi, fci) {
+  const body = document.getElementById(`fc-body-${bi}-${fci}`);
+  const chev = document.getElementById(`fc-chev-${bi}-${fci}`);
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  chev.classList.toggle('open', !open);
+}
+
+function removeBound(i) { S.form.search_bounds.splice(i, 1); renderForm(); }
+function addVehicle(bi) { S.form.search_bounds[bi].vehicles.push({number:'',segment_index:'',rule:'include'}); renderForm(); }
+function addCarrier(bi) { S.form.search_bounds[bi].operating_carriers.push({code:'',segment_index:'',rule:'include'}); renderForm(); }
+function addTravelClass(bi) { S.form.search_bounds[bi].travel_classes.push({value:'',segment_index:'',rule:'include'}); renderForm(); }
+function addFareClass(bi) { S.form.search_bounds[bi].fare_classes.push({code:'',segment_index:'',rule:'include'}); renderForm(); }
+function removeVehicle(bi, vi) { S.form.search_bounds[bi].vehicles.splice(vi,1); renderForm(); }
+function removeCarrier(bi, ci) { S.form.search_bounds[bi].operating_carriers.splice(ci,1); renderForm(); }
+function removeTravelClass(bi, tci) { S.form.search_bounds[bi].travel_classes.splice(tci,1); renderForm(); }
+function removeFareClass(bi, fci) { S.form.search_bounds[bi].fare_classes.splice(fci,1); renderForm(); }
+function clearBoundField(bi, field) {
+  if (field === 'dep_val') {
+    S.form.search_bounds[bi].departure_location.value[0] = '';
+  } else if (field === 'arr_val') {
+    S.form.search_bounds[bi].arrival_location.value[0] = '';
+  } else {
+    S.form.search_bounds[bi][field] = '';
+  }
+  renderForm();
+}
+
+// ═══════════════════════════════════════════════
+// REQUEST PREVIEW
+// ═══════════════════════════════════════════════
+function buildReqObj() {
+  const obj = { search_mode: S.form.search_mode, search_bounds: [] };
+  for (const [idx, b] of S.form.search_bounds.entries()) {
+    // Always include bound[0]; skip subsequent bounds if they have no values
+    if (idx > 0 && !isBoundActive(b)) continue;
+    const out = {
+      departure_location: { type: 'stations', value: (b.departure_location?.value||[]).filter(v=>v) },
+      arrival_location:   { type: 'stations', value: (b.arrival_location?.value||[]).filter(v=>v) }
+    };
+    if (b.departure_date)          out.departure_date = b.departure_date;
+    if (b.departure_start_time)    out.departure_start_time = b.departure_start_time;
+    if (b.departure_end_time)      out.departure_end_time = b.departure_end_time;
+    if (b.arrival_start_datetime)  out.arrival_start_datetime = b.arrival_start_datetime;
+    if (b.arrival_end_datetime)    out.arrival_end_datetime = b.arrival_end_datetime;
+    const vehs = (b.vehicles||[]).filter(v=>v.number?.trim());
+    if (vehs.length) out.vehicles = vehs.map(v=>({
+      number: v.number,
+      ...(v.segment_index!==''&&v.segment_index!==undefined?{segment_index:+v.segment_index}:{}),
+      rule: v.rule
+    }));
+    const cars = (b.operating_carriers||[]).filter(oc=>oc.code?.trim());
+    if (cars.length) out.operating_carriers = cars.map(oc=>({
+      code: oc.code,
+      ...(oc.segment_index!==''&&oc.segment_index!==undefined?{segment_index:+oc.segment_index}:{}),
+      rule: oc.rule
+    }));
+    const tcs = (b.travel_classes||[]).filter(tc=>tc.value?.trim());
+    if (tcs.length) out.travel_classes = tcs.map(tc=>({
+      value: tc.value,
+      ...(tc.segment_index!==''&&tc.segment_index!==undefined?{segment_index:+tc.segment_index}:{}),
+      rule: tc.rule
+    }));
+    const fcs = (b.fare_classes||[]).filter(fc=>fc.code?.trim());
+    if (fcs.length) out.fare_classes = fcs.map(fc=>({
+      code: fc.code,
+      ...(fc.segment_index!==''&&fc.segment_index!==undefined?{segment_index:+fc.segment_index}:{}),
+      rule: fc.rule
+    }));
+    obj.search_bounds.push(out);
+  }
+  return obj;
+}
+
+function highlight(json) {
+  return json
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, m => {
+      if (/^".*:$/.test(m))     return `<span class="json-key">${m}</span>`;
+      if (/^"/.test(m))         return `<span class="json-str">${m}</span>`;
+      if (/true|false/.test(m)) return `<span class="json-bool">${m}</span>`;
+      if (/null/.test(m))       return `<span class="json-null">${m}</span>`;
+      return `<span class="json-num">${m}</span>`;
+    });
+}
+
+function updatePreview() {
+  document.getElementById('request-preview').innerHTML =
+    highlight(JSON.stringify(buildReqObj(), null, 2));
+}
+
+// ═══════════════════════════════════════════════
+// CONFIG PAGE
+// ═══════════════════════════════════════════════
+let _dragIdx = null;
+
+function renderConfig() {
+  const list = document.getElementById('config-list');
+  if (!list) return;
+  list.innerHTML = '';
+  S.config.items.forEach((item, i) => {
+    const li = document.createElement('li');
+    li.className = 'config-item';
+    li.dataset.idx = i;
+    li.draggable = true;
+
+    // Control HTML: dropdown or minutes counter
+    let controlHtml = '';
+    if (item.type === 'dropdown') {
+      const optHtml = item.options.map(o =>
+        `<option value="${o.value}" ${item.value === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
+      ).join('');
+      controlHtml = `<select class="field-input" onchange="setConfigVal(${i}, this.value)">${optHtml}</select>`;
+    } else if (item.type === 'minutes') {
+      controlHtml = `
+        <div class="minutes-counter">
+          <button onclick="stepConfig(${i}, -5)" title="-5 min">−</button>
+          <span class="min-val" id="cfg-min-${i}">${item.value} min</span>
+          <button onclick="stepConfig(${i}, +5)" title="+5 min">+</button>
+        </div>`;
+    }
+
+    li.innerHTML = `
+      <div class="drag-handle" title="Drag to reorder">
+        <div class="drag-dot-row"><div class="drag-dot"></div><div class="drag-dot"></div></div>
+        <div class="drag-dot-row"><div class="drag-dot"></div><div class="drag-dot"></div></div>
+        <div class="drag-dot-row"><div class="drag-dot"></div><div class="drag-dot"></div></div>
+      </div>
+      <div class="config-rank">${i + 1}</div>
+      <div class="config-meta">
+        <div class="config-label">${esc(item.label)}</div>
+        <div class="config-control">${controlHtml}</div>
+        ${item.hint ? `<div class="config-hint">${esc(item.hint)}</div>` : ''}
+      </div>
+    `;
+
+    // Drag event listeners (HTML5 drag API)
+    li.addEventListener('dragstart', onDragStart);
+    li.addEventListener('dragover',  onDragOver);
+    li.addEventListener('dragleave', onDragLeave);
+    li.addEventListener('drop',      onDrop);
+    li.addEventListener('dragend',   onDragEnd);
+
+    list.appendChild(li);
+  });
+}
+
+function setConfigVal(idx, val) {
+  S.config.items[idx].value = val;
+}
+
+function stepConfig(idx, delta) {
+  const item = S.config.items[idx];
+  item.value = Math.max(1, item.value + delta);
+  const el = document.getElementById(`cfg-min-${idx}`);
+  if (el) el.textContent = `${item.value} min`;
+}
+
+function onDragStart(e) {
+  _dragIdx = +e.currentTarget.dataset.idx;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  const targetIdx = +e.currentTarget.dataset.idx;
+  if (_dragIdx === null || _dragIdx === targetIdx) return;
+  // Reorder S.config.items
+  const moved = S.config.items.splice(_dragIdx, 1)[0];
+  S.config.items.splice(targetIdx, 0, moved);
+  renderConfig();
+}
+
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.config-item').forEach(el => el.classList.remove('drag-over'));
+  _dragIdx = null;
+}
+
+// ═══════════════════════════════════════════════
+// MATCH MODE HELPERS
+// ═══════════════════════════════════════════════
+
+function isoFromDate(d) {
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Levenshtein distance: counts minimum edits (insert, delete, substitute) to transform string a to b
+function levenshteinDistance(a, b) {
+  const aStr = String(a || '').toLowerCase();
+  const bStr = String(b || '').toLowerCase();
+  const lenA = aStr.length;
+  const lenB = bStr.length;
+
+  if (lenA === 0) return lenB;
+  if (lenB === 0) return lenA;
+
+  const matrix = Array(lenA + 1).fill(null).map(() => Array(lenB + 1).fill(0));
+
+  for (let i = 0; i <= lenA; i++) matrix[i][0] = i;
+  for (let j = 0; j <= lenB; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= lenA; i++) {
+    for (let j = 1; j <= lenB; j++) {
+      const cost = aStr[i - 1] === bStr[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,     // deletion
+        matrix[i][j - 1] + 1,     // insertion
+        matrix[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+
+  return matrix[lenA][lenB];
+}
+
+// Calculate similarity percentage (0-100) between two strings
+// 100 = identical, 0 = completely different
+function stringSimilarity(a, b) {
+  if (!a || !b) return 0;
+  const aStr = String(a);
+  const bStr = String(b);
+  const maxLen = Math.max(aStr.length, bStr.length);
+  if (maxLen === 0) return 100;
+
+  const distance = levenshteinDistance(aStr, bStr);
+  return Math.round((1 - distance / maxLen) * 100);
+}
+
+// Vehicles are "close" if they have >80% string similarity
+// Examples:
+// - 33814S vs 33814: very similar (>90%)
+// - 80276L vs 80276: very similar (>90%)
+// - 3478 vs 3478L: very similar (>90%)
+// - 3478 vs 34780: similar (>85%)
+// - 33814S vs 46840: NOT similar (<50%) - will not match
+function vehiclesAreClose(a, b) {
+  const similarity = stringSimilarity(a, b);
+  return similarity >= 80; // At least 80% match required
+}
+
+function widenBound(bound) {
+  const w = Object.assign({}, bound);
+  w.vehicles          = (bound.vehicles || []).slice();
+  w.operating_carriers = (bound.operating_carriers || []).slice();
+  w.travel_classes    = (bound.travel_classes || []).slice();
+  w.fare_classes      = (bound.fare_classes || []).slice();
+
+  const vehCfg       = configVal('vehicle_number');
+  const depBuf       = configVal('departure_time');
+  const arrBuf       = configVal('arrival_time');
+  const travelCfg    = configVal('travel_class');
+  const fareCfg      = configVal('fare_class');
+
+  // --- Departure time widening ---
+  if (bound.departure_date && bound.departure_start_time && !bound.departure_end_time) {
+    const base = parseLocalISO(`${bound.departure_date}T${bound.departure_start_time}`);
+    const lo   = new Date(base.getTime() - depBuf * 60000);
+    let   hi   = new Date(base.getTime() + depBuf * 60000);
+    // Cap hi at 23:59 same day if it crosses midnight
+    if (hi.getDate() !== lo.getDate()) {
+      hi = new Date(lo.getFullYear(), lo.getMonth(), lo.getDate(), 23, 59, 0);
+    }
+    w._dep_floor = lo;
+    w._dep_ceil  = hi;
+    w._dep_base  = base;
+    w.departure_date       = `${lo.getFullYear()}-${String(lo.getMonth()+1).padStart(2,'0')}-${String(lo.getDate()).padStart(2,'0')}`;
+    w.departure_start_time = `${String(lo.getHours()).padStart(2,'0')}:${String(lo.getMinutes()).padStart(2,'0')}`;
+    w.departure_end_time   = `${String(hi.getHours()).padStart(2,'0')}:${String(hi.getMinutes()).padStart(2,'0')}`;
+  } else if (bound.departure_date && bound.departure_start_time) {
+    w._dep_base  = parseLocalISO(`${bound.departure_date}T${bound.departure_start_time}`);
+    w._dep_floor = w._dep_base;
+    w._dep_ceil  = bound.departure_end_time
+      ? parseLocalISO(`${bound.departure_date}T${bound.departure_end_time}`)
+      : null;
+  }
+
+  // --- Arrival time widening ---
+  if (bound.arrival_start_datetime && !bound.arrival_end_datetime) {
+    const base = parseLocalISO(bound.arrival_start_datetime);
+    w._arr_floor = new Date(base.getTime() - arrBuf * 60000);
+    w._arr_ceil  = new Date(base.getTime() + arrBuf * 60000);
+    w._arr_base  = base;
+    w.arrival_start_datetime = isoFromDate(w._arr_floor);
+    w.arrival_end_datetime   = isoFromDate(w._arr_ceil);
+  } else if (bound.arrival_start_datetime) {
+    w._arr_base  = parseLocalISO(bound.arrival_start_datetime);
+    w._arr_floor = w._arr_base;
+    w._arr_ceil  = bound.arrival_end_datetime ? parseLocalISO(bound.arrival_end_datetime) : null;
+  }
+
+  // --- Vehicle: Replaceable/Closest means don't filter by vehicle at all ---
+  if (vehCfg === 'replaceable' || vehCfg === 'closest') {
+    w.vehicles = [];
+  }
+
+  // --- Travel class: Flexible means don't filter ---
+  if (travelCfg === 'flexible') {
+    w.travel_classes = [];
+  }
+
+  // --- Fare class: Flexible means don't filter ---
+  if (fareCfg === 'flexible') {
+    w.fare_classes = [];
+  }
+
+  return w;
+}
+
+function scoreConnection(conn, bound, wb, configItems) {
+  let score = 0;
+
+  const rankOf = {};
+  configItems.forEach((item, i) => { rankOf[item.key] = i; });
+  const N = configItems.length;
+  const weight = r => Math.pow(10, (N - 1 - r) * 2);
+
+  // ── Vehicle Number ──
+  const vehCfg = configItems[rankOf['vehicle_number']]?.value || 'closest';
+  const requestedVehicles = (bound.vehicles || []).filter(v => v.number?.trim() && v.rule === 'include');
+  if (requestedVehicles.length && vehCfg !== 'flexible') {
+    const connVehicleNums = conn.segments.map(s => s.vehicle_number).filter(Boolean);
+    const anyPerfect = requestedVehicles.some(v =>
+      connVehicleNums.includes(v.number.trim())
+    );
+    if (anyPerfect) {
+      // Perfect match: 0 penalty
+    } else if (vehCfg === 'closest') {
+      const anyClose = requestedVehicles.some(v =>
+        connVehicleNums.some(cn => vehiclesAreClose(cn, v.number.trim()))
+      );
+      if (anyClose) {
+        score += weight(rankOf['vehicle_number']) * 1;
+      } else {
+        score += weight(rankOf['vehicle_number']) * 10;
+      }
+    } else {
+      score += weight(rankOf['vehicle_number']) * 10;
+    }
+  }
+
+  // ── Departure Time ──
+  if (wb._dep_base && conn.departure_time) {
+    const connDep = parseLocalISO(conn.departure_time);
+    const diffMs  = Math.abs(connDep - wb._dep_base);
+    const diffMin = diffMs / 60000;
+    if (diffMin > 0) {
+      const bufMin = configItems[rankOf['departure_time']]?.value || 10;
+      score += weight(rankOf['departure_time']) * (diffMin / bufMin);
+    }
+  }
+
+  // ── Arrival Time ──
+  if (wb._arr_base && conn.arrival_time) {
+    const connArr = parseLocalISO(conn.arrival_time);
+    const diffMs  = Math.abs(connArr - wb._arr_base);
+    const diffMin = diffMs / 60000;
+    if (diffMin > 0) {
+      const bufMin = configItems[rankOf['arrival_time']]?.value || 10;
+      score += weight(rankOf['arrival_time']) * (diffMin / bufMin);
+    }
+  }
+
+  // ── Departure Location ──
+  const depCfg = configItems[rankOf['departure_location']]?.value || 'perfect';
+  const reqDepCodes = (bound.departure_location?.value || []).filter(v => v.trim());
+  if (reqDepCodes.length) {
+    const connDepCode = conn.departure_station_code || conn.departure_station_id;
+    if (!reqDepCodes.includes(connDepCode)) {
+      score += weight(rankOf['departure_location']) * (depCfg === 'perfect' ? 10 : 5);
+    }
+  }
+
+  // ── Arrival Location ──
+  const arrCfg = configItems[rankOf['arrival_location']]?.value || 'perfect';
+  const reqArrCodes = (bound.arrival_location?.value || []).filter(v => v.trim());
+  if (reqArrCodes.length) {
+    const connArrCode = conn.arrival_station_code || conn.arrival_station_id;
+    if (!reqArrCodes.includes(connArrCode)) {
+      score += weight(rankOf['arrival_location']) * (arrCfg === 'perfect' ? 10 : 5);
+    }
+  }
+
+  // ── Travel Class ──
+  const tcCfg = configItems[rankOf['travel_class']]?.value || 'flexible';
+  const reqTCs = (bound.travel_classes || []).filter(tc => tc.value?.trim() && tc.rule === 'include');
+  if (reqTCs.length && tcCfg !== 'flexible') {
+    const anyHit = reqTCs.some(tc =>
+      conn.segments.some(s => s.travel_class === tc.value.trim())
+    );
+    if (!anyHit) score += weight(rankOf['travel_class']) * 5;
+  }
+
+  // ── Fare Class ──
+  const fcCfg = configItems[rankOf['fare_class']]?.value || 'flexible';
+  const reqFCs = (bound.fare_classes || []).filter(fc => fc.code?.trim() && fc.rule === 'include');
+  if (reqFCs.length && fcCfg !== 'flexible') {
+    const anyHit = reqFCs.some(fc =>
+      conn.segments.some(s => s.fare_class === fc.code.trim())
+    );
+    if (!anyHit) score += weight(rankOf['fare_class']) * 5;
+  }
+
+  return score;
+}
+
+function runMatchSearch(respBody, respCount) {
+  const groups = [];
+
+  S.form.search_bounds.forEach((bound, i) => {
+    if (i > 0 && !isBoundActive(bound)) return;
+    const legType = BOUND_LEG_TYPE[i] || null;
+    const label   = i === 0 ? 'Outbound' : i === 1 ? 'Inbound' : `Leg ${i + 1}`;
+
+    // Step 1: Widen the bound for candidate collection
+    const wb = widenBound(bound);
+
+    // Step 2: Collect candidates
+    const candidates = S.connections.filter(c => matchesBound(c, wb, legType));
+
+    // Step 3: Score each candidate
+    const scored = candidates.map(conn => ({
+      conn,
+      score: scoreConnection(conn, bound, wb, S.config.items)
+    }));
+
+    // Step 4: Sort by score ascending, then by departure time
+    scored.sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      return parseLocalISO(a.conn.departure_time) - parseLocalISO(b.conn.departure_time);
+    });
+
+    groups.push({ label, scored });
+  });
+
+  const total = groups.reduce((s, g) => s + g.scored.length, 0);
+
+  respCount.textContent = total === 0
+    ? '0 matches'
+    : `${total} result${total !== 1 ? 's' : ''}`;
+  respCount.style.display = '';
+
+  respBody.innerHTML = '';
+
+  if (total === 0) {
+    respBody.innerHTML = `<div class="empty"><div class="empty-icon">🚫</div><h3>No matches found</h3><p>No connections matched the criteria.<br>Try relaxing the filters or adjusting Config settings.</p></div>`;
+    return;
+  }
+
+  for (const grp of groups) {
+    const section = document.createElement('div');
+    section.className = 'bound-group';
+    section.innerHTML = `<div class="bound-group-label">${grp.label} · ${grp.scored.length} result${grp.scored.length !== 1 ? 's' : ''}</div>`;
+
+    grp.scored.forEach(({ conn, score }, idx) => {
+      const isBest = idx === 0;
+      const card = makeConnCard(conn, isBest);
+
+      // Annotate best match with a badge
+      if (isBest) {
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-gold';
+        badge.textContent = 'Best Match';
+        badge.style.marginLeft = '6px';
+        const badgesArea = card.querySelector('.conn-badges');
+        if (badgesArea) badgesArea.prepend(badge);
+      }
+
+      card.onclick = () => openInContent(conn);
+      section.appendChild(card);
+    });
+
+    respBody.appendChild(section);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// SEARCH
+// ═══════════════════════════════════════════════
+function runSearch() {
+  const respBody  = document.getElementById('response-body');
+  const respCount = document.getElementById('response-count');
+
+  if (!S.connections.length) {
+    respBody.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><h3>No data loaded</h3><p>Go to the Content page and load connections first.</p></div>`;
+    respCount.style.display = 'none';
+    return;
+  }
+
+  if (S.form.search_mode === 'match') {
+    runMatchSearch(respBody, respCount);
+    return;
+  }
+
+  // Build groups for active bounds only (none mode)
+  const groups = [];
+  S.form.search_bounds.forEach((bound, i) => {
+    if (i > 0 && !isBoundActive(bound)) return;
+    const legType = BOUND_LEG_TYPE[i] || null;
+    const label   = i === 0 ? 'Outbound' : i === 1 ? 'Inbound' : `Leg ${i + 1}`;
+    const matches = S.connections
+      .filter(c => matchesBound(c, bound, legType))
+      .sort((a, b) => parseLocalISO(a.departure_time) - parseLocalISO(b.departure_time));
+    groups.push({ label, matches });
+  });
+
+  const total = groups.reduce((s, g) => s + g.matches.length, 0);
+
+  respCount.textContent = total === 0
+    ? '0 matches'
+    : `${total} result${total !== 1 ? 's' : ''}`;
+  respCount.style.display = '';
+
+  respBody.innerHTML = '';
+
+  if (total === 0) {
+    respBody.innerHTML = `<div class="empty"><div class="empty-icon">🚫</div><h3>No matches found</h3><p>No connections matched the criteria.<br>Try relaxing the filters.</p></div>`;
+    return;
+  }
+
+  for (const grp of groups) {
+    const section = document.createElement('div');
+    section.className = 'bound-group';
+    section.innerHTML = `<div class="bound-group-label">${grp.label} · ${grp.matches.length} result${grp.matches.length !== 1 ? 's' : ''}</div>`;
+
+    for (const conn of grp.matches) {
+      const card = makeConnCard(conn, false);
+      card.onclick = () => openInContent(conn);
+      section.appendChild(card);
+    }
+
+    respBody.appendChild(section);
+  }
+}
+
+function openInContent(conn) {
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  document.getElementById('page-content').style.display = 'flex';
+  document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav-link')[1].classList.add('active');
+
+  setTimeout(() => {
+    document.querySelectorAll('#content-list .conn-card').forEach(c => {
+      if (c.dataset.connId === conn.id) {
+        c.classList.add('selected');
+        c.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        showDetails(conn);
+      } else {
+        c.classList.remove('selected');
+      }
+    });
+  }, 50);
+}
+
+// ═══════════════════════════════════════════════
+// CONNECTION CARD
+// ═══════════════════════════════════════════════
+function makeConnCard(conn, isBest) {
+  const card = document.createElement('div');
+  card.className = `conn-card${isBest ? ' best-match' : ''}`;
+  card.dataset.connId = conn.id;
+
+  const depDate = fmtDate(conn.departure_time);
+  const depT = fmtTime(conn.departure_time);
+  const arrT = fmtTime(conn.arrival_time);
+  const dur  = fmtDuration(conn.duration);
+  const transfers = Math.max(0, conn.segments.length - 1);
+  const xferLabel = transfers === 0 ? 'Direct' : `${transfers} transfer${transfers>1?'s':''}`;
+  const depCode = conn.departure_station_code || conn.departure_station_id || '—';
+  const arrCode = conn.arrival_station_code || conn.arrival_station_id || '—';
+  const depName = conn.departure_station_name || '';
+  const arrName = conn.arrival_station_name || '';
+
+  const segsHtml = conn.segments.map(seg => {
+    const vn  = seg.vehicle_number        ? `<span class="seg-vehicle">${seg.vehicle_number}</span>` : '';
+    const car = seg.operating_carrier_code ? `<span class="seg-carrier">${seg.operating_carrier_code}</span>` : '';
+    const dSt = seg.departure_station_name || seg.departure_station_code || '—';
+    const aSt = seg.arrival_station_name   || seg.arrival_station_code   || '—';
+    return `
+      <div class="seg-row">
+        <div class="seg-idx">${seg.index}</div>
+        ${car}${vn}
+        <div class="seg-route">${dSt} → ${aSt}</div>
+        <div class="seg-times">${fmtTime(seg.departure_time)} – ${fmtTime(seg.arrival_time)}</div>
+      </div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="conn-top">
+      <div class="conn-times">
+        ${depDate ? `<span class="conn-date">${depDate}</span><span class="conn-sep">•</span>` : ''}
+        <span class="conn-time">${depT}</span>
+        <span class="conn-arrow">–</span>
+        <span class="conn-time">${arrT}</span>
+      </div>
+      <div class="conn-badges">
+        <span class="badge badge-gray">${dur}</span>
+        <span class="badge badge-gray">${xferLabel}</span>
+      </div>
+    </div>
+    <div class="conn-stations">
+      <span>${depCode}${depName?' · '+depName:''}</span>
+      <span>${arrCode}${arrName?' · '+arrName:''}</span>
+    </div>
+    <div class="conn-segments">${segsHtml}</div>
+  `;
+  return card;
+}
+
+// ═══════════════════════════════════════════════
+// CONTENT PAGE
+// ═══════════════════════════════════════════════
+function renderContentList() {
+  const list = document.getElementById('content-list');
+  list.innerHTML = '';
+  if (!S.connections.length) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">📂</div><h3>No connections loaded</h3></div>`;
+    return;
+  }
+  for (const conn of S.connections) {
+    const card = makeConnCard(conn, false);
+    card.onclick = () => {
+      document.querySelectorAll('#content-list .conn-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      showDetails(conn);
+    };
+    list.appendChild(card);
+  }
+}
+
+function showDetails(conn) {
+  const body = document.getElementById('details-body');
+  const depDT = conn.departure_time ? conn.departure_time.replace('T',' ').slice(0,16) : '—';
+  const arrDT = conn.arrival_time   ? conn.arrival_time.replace('T',' ').slice(0,16)   : '—';
+
+  const segsHtml = conn.segments.map(seg => `
+    <div class="det-seg-card">
+      <div class="det-seg-title">Segment ${seg.index}</div>
+      <div class="det-row"><span class="det-key">Carrier</span><span class="det-val">${seg.operating_carrier_code||'—'}</span></div>
+      <div class="det-row"><span class="det-key">Vehicle #</span><span class="det-val">${seg.vehicle_number||'—'}</span></div>
+      <div class="det-row"><span class="det-key">Vehicle type</span><span class="det-val">${seg.vehicle_type||'—'}</span></div>
+      <div class="det-row"><span class="det-key">From</span><span class="det-val">${seg.departure_station_code||'—'} · ${fmtTime(seg.departure_time)}</span></div>
+      <div class="det-row"><span class="det-key">To</span><span class="det-val">${seg.arrival_station_code||'—'} · ${fmtTime(seg.arrival_time)}</span></div>
+    </div>`).join('');
+
+  body.innerHTML = `
+    <div class="det-section">
+      <div class="det-section-title">Connection</div>
+      <div class="det-row"><span class="det-key">Departure</span><span class="det-val">${depDT}</span></div>
+      <div class="det-row"><span class="det-key">Arrival</span><span class="det-val">${arrDT}</span></div>
+      <div class="det-row"><span class="det-key">Duration</span><span class="det-val">${fmtDuration(conn.duration)}</span></div>
+      <div class="det-row"><span class="det-key">From</span><span class="det-val">${conn.departure_station_code||'—'}<br>${conn.departure_station_name||''}</span></div>
+      <div class="det-row"><span class="det-key">To</span><span class="det-val">${conn.arrival_station_code||'—'}<br>${conn.arrival_station_name||''}</span></div>
+    </div>
+    <hr class="det-divider">
+    <div class="det-section">
+      <div class="det-section-title">Segments (${conn.segments.length})</div>
+      ${segsHtml}
+    </div>
+    <hr class="det-divider">
+    <div class="det-section">
+      <div class="det-section-title">Connection ID</div>
+      <div style="font-family:monospace;font-size:10px;color:var(--muted);word-break:break-all;line-height:1.5">${conn.id}</div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+initForm();
+renderConfig();
+loadDefault();
+</script>
+</body>
+</html>
